@@ -16,7 +16,7 @@ import db from "./db/db.js";
 // using the dotenv package in the db/db.js file
 
 // Set the log level to DEBUG to see all the logs
-log.setLevel(process.env.LOG_LEVEL);
+log.setLevel(process.env.LOG_LEVEL || 'INFO');
 
 console.debug('Last executions: ')
 for (const run of readRunStatus()) {
@@ -91,7 +91,7 @@ async function runCrawler() {
                     titulo       : removeAccents(title),
                     data_insercao: new Date(),
                     termos       : [],
-                    content      : extractText(body),  // Make content last to improve readability
+                    content      : extractText(request.loadedUrl, body),  // Make content last to improve readability
                     data         : '',
                     tipo         : 'f',
                 };
@@ -120,27 +120,21 @@ async function runCrawler() {
                 console.error('ERROR: ', error);
             }
         },
-        maxRequestsPerCrawl: Number(process.env.MAX_REQUESTS_PER_CRAWLER),
+        maxRequestsPerCrawl: Number(process.env.MAX_REQUESTS_PER_CRAWLER || 1000),
     });
 
     // Run the crawler with the default URLs
     await crawler.run();
+
+    // Count the number of new entries added to the database
     const postRunCount = await db.withSchema('crawling').table('crawling_news').count('url');
     const run_additions = postRunCount[0]['count'] - preRunCount[0]['count'];
     console.log(`Tried adding: ${run_additions} new entries`);
     console.debug('Status: ', saveRunStatus({additions: run_additions}));
+
+    // Refresh the materialized view
+    await db.raw('REFRESH MATERIALIZED VIEW mapa_protestos;');
 }
-
-
-// Schedule the crawler to run every day at midnight
-// cron.schedule('0 0 * * *', async () => {
-//     const date = new Date();
-//     console.log(`Running Crawler at ${formatDate(date)}`);
-
-//     // Run the crawler with the default URLs
-//     await crawler.run(defaultURLS);
-//     console.debug('Status: ', saveRunStatus());
-// });
 
 const crawl = async() => {
     await runCrawler();
